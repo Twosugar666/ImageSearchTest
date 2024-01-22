@@ -18,7 +18,20 @@ from gradio.components import Image as GradioImage, Dropdown
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def extract_feature_by_model(model, preprocess, file, model_name):
+def extract_feature_by_model(model, preprocess, file, model_name, input_size=128):
+    """
+    提取给定文件的特征向量。
+
+    参数:
+    model: 用于提取特征的模型。
+    preprocess: 预处理函数，适用于特定的模型。
+    file: 要处理的图像文件路径。
+    model_name: 使用的模型名称，用于决定特征提取的方法。
+    input_size: 输入图像的大小，仅在非 CLIP/LLaVA 模型中使用。
+
+    返回:
+    提取的特征向量。
+    """
     img_rgb = Image.open(file).convert('RGB')
 
     if model_name == "clip":
@@ -26,12 +39,11 @@ def extract_feature_by_model(model, preprocess, file, model_name):
         with torch.no_grad():
             vec = model.encode_image(image)
     elif model_name == "LLaVA":
-        image = preprocess(img_rgb).unsqueeze(0).to(device)
-        with torch.no_grad():
-            vec = model.encode_image(image)
+        # 如果有 LLaVA 的特定处理方式，请在这里添加
+        pass
     else:
-        # 对于其他模型，假设使用了单一的特征提取方法
-        image = img_rgb.resize((args.input_size, args.input_size), Image.LANCZOS)
+        # 对于其他 TIMM 模型的处理
+        image = img_rgb.resize((input_size, input_size), Image.LANCZOS)
         image = torchvision.transforms.ToTensor()(image)
         trainset_mean = [0.47083899, 0.43284143, 0.3242959]
         trainset_std = [0.37737389, 0.36130483, 0.34895992]
@@ -45,7 +57,20 @@ def extract_feature_by_model(model, preprocess, file, model_name):
     return vec
 
 
+
 def extract_features(args, model, image_path='', preprocess=None):
+    """
+    从指定路径提取所有图像的特征向量。
+
+    参数:
+    args: 包含配置参数的对象。
+    model: 用于提取特征的模型。
+    image_path: 包含图像的目录路径。
+    preprocess: 预处理函数，适用于特定的模型。
+
+    返回:
+    包含所有图像及其特征向量的字典。
+    """
     allVectors = {}  # 对数据库中所有照片的表征存储
 
     for image_file in tqdm.tqdm(glob.glob(os.path.join(image_path, '*', '*.jpg'))):
@@ -60,6 +85,15 @@ def extract_features(args, model, image_path='', preprocess=None):
 
 
 def getSimilarityMatrix(vectors_dict):
+    """
+    计算特征向量之间的相似度矩阵。
+
+    参数:
+    vectors_dict: 包含特征向量的字典。
+
+    返回:
+    相似度矩阵及对应的键列表。
+    """
     v = np.array(list(vectors_dict.values()))  # [NUM, H],把所有表征向量转化成数组
 
     numerator = np.matmul(v, v.T)  # [NUM, NUM]
@@ -73,6 +107,15 @@ def getSimilarityMatrix(vectors_dict):
 
 
 def setAxes(ax, image, query=False, **kwargs):
+    """
+    设置绘图轴的属性。
+
+    参数:
+    ax: matplotlib 轴对象。
+    image: 图像文件名。
+    query: 是否为查询图像。
+    kwargs: 其他可选参数，例如分数值。
+    """
     value = kwargs.get("value", None)
     if query:
         ax.set_xlabel("Query Image\n{0}".format(image), fontsize=12)
@@ -86,6 +129,17 @@ def setAxes(ax, image, query=False, **kwargs):
 
 
 def plotSimilarImages(args, image, simImages, simValues, numRow=1, numCol=4):
+    """
+    绘制相似图像及其得分。
+
+    参数:
+    args: 包含配置参数的对象。
+    image: 查询图像文件路径。
+    simImages: 相似图像的列表。
+    simValues: 相似图像的得分列表。
+    numRow: 图像网格的行数。
+    numCol: 图像网格的列数。
+    """
     fig = plt.figure()
 
     # set width and height in inches
@@ -111,6 +165,16 @@ def plotSimilarImages(args, image, simImages, simValues, numRow=1, numCol=4):
     plt.show()
 
 def save_uploaded_image(uploaded_filepath, save_dir="/Users/twosugar/Desktop/dataset_fruit_veg/upload"):
+    """
+    将上传的图像文件保存到指定目录。
+
+    参数:
+    uploaded_filepath: 上传的图像文件路径。
+    save_dir: 保存图像的目录路径。
+
+    返回:
+    保存的图像文件路径。
+    """
     # 确保保存目录存在
     os.makedirs(save_dir, exist_ok=True)
 
@@ -123,6 +187,16 @@ def save_uploaded_image(uploaded_filepath, save_dir="/Users/twosugar/Desktop/dat
     return target_path
 
 def search_similar_images(uploaded_image, selected_model):
+    """
+    搜索上传图像的相似图像。
+
+    参数:
+    uploaded_image: 上传的图像文件路径。
+    selected_model: 选择的模型名称。
+
+    返回:
+    相似图像的列表。
+    """
     # 确保 selected_model 是字符串
     if isinstance(selected_model, list):
         selected_model = selected_model[0]
