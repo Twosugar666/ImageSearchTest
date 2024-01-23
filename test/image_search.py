@@ -1,10 +1,8 @@
 import os
-import argparse
 import shutil
-
+import PIL.Image
 from matplotlib import pyplot as plt
 import glob
-import sys
 import tqdm
 import numpy as np
 import torch
@@ -13,25 +11,39 @@ from PIL import Image
 import timm
 import clip
 import gradio as gr
-from gradio.components import Image as GradioImage, Dropdown
+import requests
+from gradio.components import Image as GrImage, Dropdown, Textbox
+import google.generativeai as genai
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+GOOGLE_API_KEY = "AIzaSyBd3WntReNYp0QgUNYs8ntVOkZHznk32zs"
+genai.configure(api_key=GOOGLE_API_KEY)
+
+def call_geminipro_api(image_path, api_key):
+    # 根据 GeminiPro API 的要求设置 URL 和请求参数
+    url = "https://makersuite.google.com/app/prompts/new_freeform"
+    headers = {
+        "Authorization": f"Bearer {api_key}"
+    }
+    files = {'image': open(image_path, 'rb')}
+
+    response = requests.post(url, headers=headers, files=files)
+    try:
+        response = requests.post(url, headers=headers, files=files)
+        response.raise_for_status()  # 将触发异常，如果状态码不是 200-399
+        return response.json()
+    except requests.exceptions.HTTPError as errh:
+        print("Http Error:",errh)
+    except requests.exceptions.ConnectionError as errc:
+        print("Error Connecting:",errc)
+    except requests.exceptions.Timeout as errt:
+        print("Timeout Error:",errt)
+    except requests.exceptions.RequestException as err:
+        print("Oops: Something Else",err)
+
 def extract_feature_by_model(model, preprocess, file, model_name, input_size=128):
-    """
-    提取给定文件的特征向量。
-
-    参数:
-    model: 用于提取特征的模型。
-    preprocess: 预处理函数，适用于特定的模型。
-    file: 要处理的图像文件路径。
-    model_name: 使用的模型名称，用于决定特征提取的方法。
-    input_size: 输入图像的大小，仅在非 CLIP/LLaVA 模型中使用。
-
-    返回:
-    提取的特征向量。
-    """
     img_rgb = Image.open(file).convert('RGB')
 
     if model_name == "clip":
@@ -39,10 +51,11 @@ def extract_feature_by_model(model, preprocess, file, model_name, input_size=128
         with torch.no_grad():
             vec = model.encode_image(image)
     elif model_name == "LLaVA":
-        # 如果有 LLaVA 的特定处理方式，请在这里添加
-        pass
+        image = preprocess(img_rgb).unsqueeze(0).to(device)
+        with torch.no_grad():
+            vec = model.encode_image(image)
     else:
-        # 对于其他 TIMM 模型的处理
+        # 对于其他模型，假设使用了单一的特征提取方法
         image = img_rgb.resize((input_size, input_size), Image.LANCZOS)
         image = torchvision.transforms.ToTensor()(image)
         trainset_mean = [0.47083899, 0.43284143, 0.3242959]
@@ -55,8 +68,6 @@ def extract_feature_by_model(model, preprocess, file, model_name, input_size=128
     vec = vec.squeeze().cpu().numpy()
     img_rgb.close()
     return vec
-
-
 
 def extract_features(args, model, image_path='', preprocess=None):
     """
@@ -83,8 +94,7 @@ def extract_features(args, model, image_path='', preprocess=None):
 
     return allVectors
 
-
-def getSimilarityMatrix(vectors_dict):
+def get_similarity_matrix(vectors_dict):
     """
     计算特征向量之间的相似度矩阵。
 
@@ -104,7 +114,6 @@ def getSimilarityMatrix(vectors_dict):
     sim = numerator / denominator
     keys = list(vectors_dict.keys())
     return sim, keys
-
 
 def setAxes(ax, image, query=False, **kwargs):
     """
@@ -127,19 +136,7 @@ def setAxes(ax, image, query=False, **kwargs):
     ax.set_xticks([])
     ax.set_yticks([])
 
-
 def plotSimilarImages(args, image, simImages, simValues, numRow=1, numCol=4):
-    """
-    绘制相似图像及其得分。
-
-    参数:
-    args: 包含配置参数的对象。
-    image: 查询图像文件路径。
-    simImages: 相似图像的列表。
-    simValues: 相似图像的得分列表。
-    numRow: 图像网格的行数。
-    numCol: 图像网格的列数。
-    """
     fig = plt.figure()
 
     # set width and height in inches
@@ -187,16 +184,6 @@ def save_uploaded_image(uploaded_filepath, save_dir="/Users/twosugar/Desktop/dat
     return target_path
 
 def search_similar_images(uploaded_image, selected_model):
-    """
-    搜索上传图像的相似图像。
-
-    参数:
-    uploaded_image: 上传的图像文件路径。
-    selected_model: 选择的模型名称。
-
-    返回:
-    相似图像的列表。
-    """
     # 确保 selected_model 是字符串
     if isinstance(selected_model, list):
         selected_model = selected_model[0]
@@ -222,7 +209,7 @@ def search_similar_images(uploaded_image, selected_model):
     allVectors = np.load(f"{save_dir}/{selected_model}/{feature_dict_file}", allow_pickle=True).item()
     allVectors[image_path] = query_features
 
-    sim, keys = getSimilarityMatrix(allVectors)
+    sim, keys = get_similarity_matrix(allVectors)
     index = keys.index(image_path)
     sim_vec = sim[index]
 
@@ -233,19 +220,60 @@ def search_similar_images(uploaded_image, selected_model):
     return simImages
 
 
-model_names = timm.list_models(pretrained=True) + ["clip"]  # 假设你想包括所有 TIMM 模型和 CLIP 模型
+def describe_image(uploaded_image, selected_model):
+    """
+    使用 Gemini Pro 对上传的图像进行描述。
 
-# 确保 Gradio 界面中使用的是 GradioImage
-iface = gr.Interface(
-    fn=search_similar_images,
-    inputs=[
-        GradioImage(type="filepath", label="Upload Image"),
-        Dropdown(choices=model_names, label="Select Model")
-    ],
-    outputs="gallery",
-    title="Image Search Engine",
-    description="Upload an image and select a model to search for similar images."
+    参数:
+    uploaded_image: 上传的图像文件路径。
+
+    返回:
+    图像的描述。
+    """
+    # 调用 GeminiPro API
+    selected_model = genai.GenerativeModel('gemini-pro-vision')
+    # 获取图像路径
+    image_path = save_uploaded_image(uploaded_image)
+    # 打开图像文件
+    img = PIL.Image.open(image_path)
+    # 使用 Gemini Pro 对图像进行描述
+    try:
+        response = selected_model.generate_content(["你是一个图像分析专家,你需要将提供的图像使用中文描述出来", img], stream=True)
+        response.resolve()
+        description = response.text
+    except Exception as e:
+        description = f"Error in describing image with Gemini Pro: {e}"
+    return description
+
+
+model_names_1 = ["clip", "resnet50", "resnet152"]
+model_names_2 = ["Gemini Pro"]
+
+
+# 示例图像的路径和模型名称
+examples = [
+    ["/Users/twosugar/Desktop/Coding/ImageSearch/test/examples/example_1.png", "clip"],
+    ["/Users/twosugar/Desktop/Coding/ImageSearch/test/examples/example_2.png", "resnet50"],
+    ["/Users/twosugar/Desktop/Coding/ImageSearch/test/examples/example_3.png", "clip"],
+]
+
+
+# 为每个函数创建一个独立的接口
+describe_interface = gr.Interface(
+    fn=describe_image,
+    inputs=[GrImage(type="filepath", label="Upload Image for Description"),
+            Dropdown(choices=model_names_2, label="Select Model for Description")],
+    outputs=Textbox(label="Image Description")
 )
 
+search_interface = gr.Interface(
+    fn=search_similar_images,
+    inputs=[GrImage(type="filepath", label="Upload Image for Similar Images"),
+            Dropdown(choices=model_names_1, label="Select Model for Similar Images")],
+    outputs="gallery"
+)
+
+demo = gr.TabbedInterface([describe_interface, search_interface], ["Describe", "Search"])
+
 if __name__ == '__main__':
-    iface.launch()
+    demo.launch()

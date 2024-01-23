@@ -3,8 +3,8 @@
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/Chinese-CLIP" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/LLaVA" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/flash-attention" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/flash-attention/csrc/cutlass" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/llava" vcs="Git" />
   </component>
 </project>
