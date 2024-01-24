@@ -221,15 +221,6 @@ def search_similar_images(uploaded_image, selected_model):
 
 
 def describe_image(uploaded_image, selected_model):
-    """
-    使用 Gemini Pro 对上传的图像进行描述。
-
-    参数:
-    uploaded_image: 上传的图像文件路径。
-
-    返回:
-    图像的描述。
-    """
     # 调用 GeminiPro API
     selected_model = genai.GenerativeModel('gemini-pro-vision')
     # 获取图像路径
