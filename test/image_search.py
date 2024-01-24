@@ -17,11 +17,10 @@ import google.generativeai as genai
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 GOOGLE_API_KEY = "AIzaSyBd3WntReNYp0QgUNYs8ntVOkZHznk32zs"
 genai.configure(api_key=GOOGLE_API_KEY)
 
-def call_geminipro_api(image_path, api_key):
+def call_gemini_pro_api(image_path, api_key):
     # 根据 GeminiPro API 的要求设置 URL 和请求参数
     url = "https://makersuite.google.com/app/prompts/new_freeform"
     headers = {
@@ -115,7 +114,7 @@ def get_similarity_matrix(vectors_dict):
     keys = list(vectors_dict.keys())
     return sim, keys
 
-def setAxes(ax, image, query=False, **kwargs):
+def set_axes(ax, image, query=False, **kwargs):
     """
     设置绘图轴的属性。
 
@@ -136,23 +135,23 @@ def setAxes(ax, image, query=False, **kwargs):
     ax.set_xticks([])
     ax.set_yticks([])
 
-def plotSimilarImages(args, image, simImages, simValues, numRow=1, numCol=4):
+def plot_similar_images(args, image, sim_images, sim_values, num_row=1, num_col=4):
     fig = plt.figure()
 
     # set width and height in inches
     fig.set_size_inches(18.5, 10.5)
     fig.suptitle(f"use engine model: {args.model_name}", fontsize=35)
 
-    for j in range(0, numCol * numRow):
+    for j in range(0, num_col * num_row):
         ax = []
         if j == 0:  # query照片Axes设置不太一样
             img = Image.open(image)
-            ax = fig.add_subplot(numRow, numCol, 1)
-            setAxes(ax, image.split(os.sep)[-1], query=True)
+            ax = fig.add_subplot(num_row, num_col, 1)
+            set_axes(ax, image.split(os.sep)[-1], query=True)
         else:
-            img = Image.open(simImages[j - 1])
-            ax.append(fig.add_subplot(numRow, numCol, j + 1))
-            setAxes(ax[-1], simImages[j - 1].split(os.sep)[-1], value=simValues[j - 1])
+            img = Image.open(sim_images[j - 1])
+            ax.append(fig.add_subplot(num_row, num_col, j + 1))
+            set_axes(ax[-1], sim_images[j - 1].split(os.sep)[-1], value=sim_values[j - 1])
         img = img.convert('RGB')
         plt.imshow(img)
         img.close()
@@ -219,7 +218,6 @@ def search_similar_images(uploaded_image, selected_model):
 
     return simImages
 
-
 def describe_image(uploaded_image, selected_model):
     # 调用 GeminiPro API
     selected_model = genai.GenerativeModel('gemini-pro-vision')
@@ -240,14 +238,12 @@ def describe_image(uploaded_image, selected_model):
 model_names_1 = ["clip", "resnet50", "resnet152"]
 model_names_2 = ["Gemini Pro"]
 
-
 # 示例图像的路径和模型名称
 examples = [
     ["/Users/twosugar/Desktop/Coding/ImageSearch/test/examples/example_1.png", "clip"],
     ["/Users/twosugar/Desktop/Coding/ImageSearch/test/examples/example_2.png", "resnet50"],
     ["/Users/twosugar/Desktop/Coding/ImageSearch/test/examples/example_3.png", "clip"],
 ]
-
 
 # 为每个函数创建一个独立的接口
 describe_interface = gr.Interface(
